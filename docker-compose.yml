@@ -1,0 +1,88 @@
+services:
+  bitcoind:
+    image: bitcoin/bitcoin:${BITCOIN_VERSION:-28}
+    network_mode: host
+    command:
+      - bitcoind
+      - -${BITCOIN_NETWORK:-signet}
+      - -rest
+      - -server
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=${BITCOIN_RPC_USER:-user}
+      - -rpcpassword=${BITCOIN_RPC_PASS:-password}
+      - -rpcport=${BITCOIN_RPC_PORT:-38332}
+      - -zmqpubrawtx=tcp://0.0.0.0:${BITCOIN_ZMQ_PORT:-28332}
+      - -zmqpubrawblock=tcp://0.0.0.0:${BITCOIN_ZMQ_PORT:-28332}
+      - -txindex=1
+    volumes:
+      - bitcoin-data:/home/bitcoin/.bitcoin
+    healthcheck:
+      test:
+        - CMD
+        - bitcoin-cli
+        - -${BITCOIN_NETWORK:-signet}
+        - -rpcuser=${BITCOIN_RPC_USER:-user}
+        - -rpcpassword=${BITCOIN_RPC_PASS:-password}
+        - -rpcport=${BITCOIN_RPC_PORT:-38332}
+        - getblockchaininfo
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  tor:
+    image: osminogin/tor-simple
+    network_mode: host
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        HASH=$$(tor --hash-password "$${TOR_AUTH_PASSWORD}" | grep "^16:")
+        cat > /tmp/torrc << EOF
+        SocksPort 0.0.0.0:$${TOR_SOCKS_PORT:-9050}
+        ControlPort 0.0.0.0:$${TOR_CONTROL_PORT:-9051}
+        DataDirectory /var/lib/tor
+        HashedControlPassword $$HASH
+        Log notice stdout
+        EOF
+        exec tor -f /tmp/torrc
+    volumes:
+      - tor-data:/var/lib/tor
+    environment:
+      - TOR_AUTH_PASSWORD=${TOR_AUTH_PASSWORD:-coinswap}
+      - TOR_SOCKS_PORT=${TOR_SOCKS_PORT:-9050}
+      - TOR_CONTROL_PORT=${TOR_CONTROL_PORT:-9051}
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "${TOR_SOCKS_PORT:-9050}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+
+  marketd:
+    build: .
+    network_mode: host
+    environment:
+      - MARKETD_LISTEN_ADDR=0.0.0.0:${MARKETD_PORT:-3000}
+      - MARKETD_BITCOIN_RPC_URL=127.0.0.1:${BITCOIN_RPC_PORT:-38332}
+      - MARKETD_BITCOIN_RPC_USER=${BITCOIN_RPC_USER:-user}
+      - MARKETD_BITCOIN_RPC_PASS=${BITCOIN_RPC_PASS:-password}
+      - MARKETD_ZMQ_ADDR=tcp://127.0.0.1:${BITCOIN_ZMQ_PORT:-28332}
+      - MARKETD_TOR_CONTROL_PORT=${TOR_CONTROL_PORT:-9051}
+      - MARKETD_TOR_AUTH_PASSWORD=${TOR_AUTH_PASSWORD:?TOR_AUTH_PASSWORD is required}
+      - RUST_LOG=${RUST_LOG:-info}
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+      tor:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  bitcoin-data:
+    driver: local
+  tor-data:
+    driver: local

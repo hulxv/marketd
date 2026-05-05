@@ -1,26 +1,42 @@
 import { useState, useEffect } from "react";
 
+const POLL_INTERVAL_MS = 60_000;
+
 function App() {
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  useEffect(() => {
-    fetch("/offer_data.json")
-      .then((res) => res.json())
+  const EXPLORER_BASE =
+    import.meta.env.VITE_EXPLORER_BASE || "https://mempool.space/signet";
+
+  const fetchOffers = () => {
+    fetch("/api/offers")
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then((data) => {
         setOffers(data);
+        setError(null);
         if (data.length > 0) {
-          const timestamps = data.map((offer) => offer.timestamp * 1000);
-          const latestTimestamp = Math.max(...timestamps);
-          setLastUpdated(new Date(latestTimestamp));
+          const latest = Math.max(...data.map((o) => o.timestamp * 1000));
+          setLastUpdated(new Date(latest));
         }
         setLoading(false);
       })
       .catch((err) => {
-        console.error("Error loading data:", err);
+        console.error("Error loading offers:", err);
+        setError(err.message);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    fetchOffers();
+    const id = setInterval(fetchOffers, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
   }, []);
 
   if (loading) {
@@ -48,28 +64,30 @@ function App() {
           </p>
         </div>
 
+        {error && (
+          <div className="mb-6 p-4 bg-red-900 border border-red-700 rounded-lg text-red-300 text-sm">
+            Failed to load offers: {error}
+          </div>
+        )}
+
         <div className="bg-gray-800 rounded-xl shadow-2xl border border-gray-700 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
-                <tr className="bg-gradient-to-r from-orange-600 to-orange-500">
+                <tr className="bg-linear-to-r from-orange-600 to-orange-500">
                   {[
                     { label: "Address", desc: "Maker Address" },
-                    { label: "Base Fee", desc: "Fixed Fee" },
+                    { label: "Base Fee", desc: "Fixed Fee (sat)" },
                     { label: "Amount", desc: "Volume Fee" },
                     { label: "Time", desc: "Time Fee" },
-                    { label: "Min Size", desc: "Minimum Order" },
-                    { label: "Max Size", desc: "Maximum Order" },
+                    { label: "Min Size", desc: "Minimum Order (sat)" },
+                    { label: "Max Size", desc: "Maximum Order (sat)" },
                     { label: "Bond", desc: "Fidelity Bond" },
                   ].map((header, idx) => (
                     <th key={idx} className="px-6 py-4 text-left">
                       <div className="flex flex-col">
-                        <span className="text-white font-bold">
-                          {header.label}
-                        </span>
-                        <span className="text-orange-100 text-xs font-normal">
-                          {header.desc}
-                        </span>
+                        <span className="text-white font-bold">{header.label}</span>
+                        <span className="text-orange-100 text-xs font-normal">{header.desc}</span>
                       </div>
                     </th>
                   ))}
@@ -77,57 +95,65 @@ function App() {
               </thead>
 
               <tbody className="divide-y divide-gray-700">
-                {offers.map((offer, index) => (
-                  <tr
-                    key={index}
-                    className="hover:bg-gray-700 transition-colors duration-150"
-                  >
-                    <td className="px-6 py-4">
-                      <div className="font-mono text-sm text-orange-300 truncate max-w-xs">
-                        {offer.address}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="font-medium text-green-400">
-                        {offer.base_fee}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-blue-400 font-medium">
-                        {(offer.amount_relative_fee_pct * 100).toFixed(2)}%
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-blue-400 font-medium">
-                        {(offer.time_relative_fee_pct * 100).toFixed(2)}%
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-yellow-400">
-                        {offer.min_size.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-yellow-400">
-                        {offer.max_size.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-gray-200">
-                       {Number(offer.fidelity_bond.amount).toLocaleString()}
-                      </div>
-                      <a
-                        href={`http://xlrj7ilheypw67premos73gxlcl7ha77kbhrqys7mydp7jve25olsxyd.onion/tx/${offer.fidelity_bond.outpoint.txid}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-orange-400 text-xs hover:underline truncate block max-w-xs"
-                        title={offer.fidelity_bond.outpoint.txid} 
-                      >
-                        {offer.fidelity_bond.outpoint.txid}
-                      </a>
+                {offers.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                      No offers available. The daemon may still be syncing.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  offers.map((offer, index) => (
+                    <tr
+                      key={`${offer.fidelity_bond.outpoint.txid}:${offer.fidelity_bond.outpoint.vout}`}
+                      className="hover:bg-gray-700 transition-colors duration-150"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="font-mono text-sm text-orange-300 truncate max-w-xs">
+                          {offer.address}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="font-medium text-green-400">
+                          {offer.base_fee.toLocaleString()}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-blue-400 font-medium">
+                          {(offer.amount_relative_fee_pct * 100).toFixed(2)}%
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-blue-400 font-medium">
+                          {(offer.time_relative_fee_pct * 100).toFixed(2)}%
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-yellow-400">
+                          {offer.min_size.toLocaleString()}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-yellow-400">
+                          {offer.max_size.toLocaleString()}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-gray-200">
+                          {offer.fidelity_bond.amount.toLocaleString()} sat
+                        </div>
+                        <a
+                          href={`${EXPLORER_BASE}/tx/${offer.fidelity_bond.outpoint.txid}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-orange-400 text-xs hover:underline truncate block max-w-xs"
+                          title={offer.fidelity_bond.outpoint.txid}
+                        >
+                          {offer.fidelity_bond.outpoint.txid}
+                        </a>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -135,8 +161,8 @@ function App() {
 
         <div className="mt-6 text-center text-gray-400 text-sm">
           <p>
-            Showing {offers.length} active offers •{" "}
-            {lastUpdated ? lastUpdated.toLocaleTimeString() : "Unknown"}
+            Showing {offers.length} active offer{offers.length !== 1 ? "s" : ""} •{" "}
+            {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Waiting for first sync..."}
           </p>
         </div>
       </div>
