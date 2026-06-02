@@ -1,0 +1,22 @@
+name: Integration Test
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  integration-test:
+    name: Integration test (Docker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and run e2e test
+        # Bundles bitcoind + nostr-rs-relay + the test binary; runs it once.
+        # The image build is the slow part (~3 minutes on a cold cache).
+        run: make test-integration-docker

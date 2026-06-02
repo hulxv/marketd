@@ -1,6 +1,9 @@
-use axum::{extract::State, http::StatusCode, response::Json, routing::get, Router};
-use serde_json::{json, Value};
-use tower_http::{cors::CorsLayer, services::{ServeDir, ServeFile}};
+use axum::{Router, extract::State, http::StatusCode, response::Json, routing::get};
+use serde_json::{Value, json};
+use tower_http::{
+    cors::CorsLayer,
+    services::{ServeDir, ServeFile},
+};
 
 use crate::state::SharedStore;
 

@@ -86,8 +86,12 @@ function App() {
                   ].map((header, idx) => (
                     <th key={idx} className="px-6 py-4 text-left">
                       <div className="flex flex-col">
-                        <span className="text-white font-bold">{header.label}</span>
-                        <span className="text-orange-100 text-xs font-normal">{header.desc}</span>
+                        <span className="text-white font-bold">
+                          {header.label}
+                        </span>
+                        <span className="text-orange-100 text-xs font-normal">
+                          {header.desc}
+                        </span>
                       </div>
                     </th>
                   ))}
@@ -97,12 +101,15 @@ function App() {
               <tbody className="divide-y divide-gray-700">
                 {offers.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-gray-400">
+                    <td
+                      colSpan={7}
+                      className="px-6 py-12 text-center text-gray-400"
+                    >
                       No offers available. The daemon may still be syncing.
                     </td>
                   </tr>
                 ) : (
-                  offers.map((offer, index) => (
+                  offers.map((offer) => (
                     <tr
                       key={`${offer.fidelity_bond.outpoint.txid}:${offer.fidelity_bond.outpoint.vout}`}
                       className="hover:bg-gray-700 transition-colors duration-150"
@@ -161,8 +168,11 @@ function App() {
 
         <div className="mt-6 text-center text-gray-400 text-sm">
           <p>
-            Showing {offers.length} active offer{offers.length !== 1 ? "s" : ""} •{" "}
-            {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Waiting for first sync..."}
+            Showing {offers.length} active offer{offers.length !== 1 ? "s" : ""}{" "}
+            •{" "}
+            {lastUpdated
+              ? `Updated ${lastUpdated.toLocaleTimeString()}`
+              : "Waiting for first sync..."}
           </p>
         </div>
       </div>

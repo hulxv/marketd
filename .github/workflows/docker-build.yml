@@ -6,7 +6,7 @@ on:
     paths:
       - "Dockerfile"
       - "src/**"
-      - "frontend/**"
+      - "web/**"
       - "Cargo.toml"
       - "Cargo.lock"
   pull_request:
@@ -14,13 +14,13 @@ on:
     paths:
       - "Dockerfile"
       - "src/**"
-      - "frontend/**"
+      - "web/**"
       - "Cargo.toml"
       - "Cargo.lock"
 
 jobs:
   docker-build:
-    name: Build and Test Docker Image
+    name: Build and smoke-test Docker image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,35 +35,62 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile
           push: false
           load: true
-          tags: maker-dashboard:test
+          tags: marketd:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Test container starts and responds
+      - name: Smoke-test container
         run: |
-          docker run -d --rm --name test-container -p 3000:3000 \
-            -e DASHBOARD_HOST=0.0.0.0 -e DASHBOARD_ALLOW_REMOTE=true \
-            maker-dashboard:test
-          # Wait for the server to be ready
+          set -euo pipefail
+
+          # marketd's HTTP server binds before sync_loop establishes the
+          # bitcoind connection, so /api/health responds even without a
+          # backing node. That makes a hermetic smoke test possible —
+          # the daemon will retry-spam connection errors to bitcoind in
+          # the background, which is expected.
+          docker run -d --rm --name marketd-test -p 3000:3000 marketd:test
+
+          cleanup() { docker stop marketd-test >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          # Wait up to 30 s for the HTTP server to bind.
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:3000/ > /dev/null 2>&1; then
-              echo "Server is up"
+            if curl -fsS http://127.0.0.1:3000/api/health > /dev/null; then
+              echo "marketd is responding"
               break
             fi
             if [ "$i" -eq 30 ]; then
-              echo "Server failed to start"
-              docker logs test-container
+              echo "marketd did not respond within 30 s"
+              docker logs marketd-test || true
               exit 1
             fi
             sleep 1
           done
-          # Verify API responds and that a fresh container is uninitialized.
-          if ! curl -sf http://localhost:3000/api/auth/status \
-            | jq -e '.data.initialized == false and .data.authenticated == false'; then
-            echo "Auth status assertion failed"
-            docker logs test-container
+
+          # /api/health: status=ok, offer_count=0 on a fresh container.
+          health=$(curl -fsS http://127.0.0.1:3000/api/health)
+          echo "Health: $health"
+          if ! echo "$health" | jq -e '.status == "ok" and .offer_count == 0' > /dev/null; then
+            echo "Health assertion failed"
+            docker logs marketd-test || true
             exit 1
           fi
-          docker stop test-container || true
+
+          # /api/offers: empty array on a fresh container.
+          offers=$(curl -fsS http://127.0.0.1:3000/api/offers)
+          echo "Offers: $offers"
+          if ! echo "$offers" | jq -e 'type == "array" and length == 0' > /dev/null; then
+            echo "Offers assertion failed"
+            docker logs marketd-test || true
+            exit 1
+          fi
+
+          # SPA fallback serves the frontend (index.html from web/dist).
+          if ! curl -fsS http://127.0.0.1:3000/ > /dev/null; then
+            echo "SPA root path did not respond"
+            docker logs marketd-test || true
+            exit 1
+          fi

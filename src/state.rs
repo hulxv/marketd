@@ -1,6 +1,5 @@
 use coinswap::{protocol::common_messages::Offer, taker::offers::MakerAddress};
 use serde::Serialize;
-use serde_json::Value;
 use std::sync::{Arc, RwLock};
 
 #[derive(Serialize, Clone, Debug)]
@@ -36,14 +35,9 @@ pub struct ApiOffer {
 impl ApiOffer {
     pub fn from_coinswap(offer: &Offer, address: &MakerAddress, timestamp: u64) -> Self {
         let bond = &offer.fidelity.bond;
-
-        // TODO: FidelityBond::outpoint is pub(crate); extract via serde until it is made pub.
-        let bond_json = serde_json::to_value(bond).unwrap_or(Value::Null);
-        let txid = bond_json["outpoint"]["txid"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
-        let vout = bond_json["outpoint"]["vout"].as_u64().unwrap_or(0) as u32;
+        let outpoint = bond.outpoint();
+        let txid = outpoint.txid.to_string();
+        let vout = outpoint.vout;
 
         Self {
             address: address.to_string(),

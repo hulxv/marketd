@@ -7,13 +7,13 @@ services:
       - -${BITCOIN_NETWORK:-signet}
       - -rest
       - -server
-      - -rpcbind=0.0.0.0
-      - -rpcallowip=0.0.0.0/0
+      - -rpcbind=127.0.0.1
+      - -rpcallowip=127.0.0.1
       - -rpcuser=${BITCOIN_RPC_USER:-user}
       - -rpcpassword=${BITCOIN_RPC_PASS:-password}
       - -rpcport=${BITCOIN_RPC_PORT:-38332}
-      - -zmqpubrawtx=tcp://0.0.0.0:${BITCOIN_ZMQ_PORT:-28332}
-      - -zmqpubrawblock=tcp://0.0.0.0:${BITCOIN_ZMQ_PORT:-28332}
+      - -zmqpubrawtx=tcp://127.0.0.1:${BITCOIN_ZMQ_PORT:-28332}
+      - -zmqpubrawblock=tcp://127.0.0.1:${BITCOIN_ZMQ_PORT:-28332}
       - -txindex=1
     volumes:
       - bitcoin-data:/home/bitcoin/.bitcoin
@@ -41,8 +41,8 @@ services:
       - |
         HASH=$$(tor --hash-password "$${TOR_AUTH_PASSWORD}" | grep "^16:")
         cat > /tmp/torrc << EOF
-        SocksPort 0.0.0.0:$${TOR_SOCKS_PORT:-9050}
-        ControlPort 0.0.0.0:$${TOR_CONTROL_PORT:-9051}
+        SocksPort 127.0.0.1:$${TOR_SOCKS_PORT:-9050}
+        ControlPort 127.0.0.1:$${TOR_CONTROL_PORT:-9051}
         DataDirectory /var/lib/tor
         HashedControlPassword $$HASH
         Log notice stdout
@@ -51,7 +51,7 @@ services:
     volumes:
       - tor-data:/var/lib/tor
     environment:
-      - TOR_AUTH_PASSWORD=${TOR_AUTH_PASSWORD:-coinswap}
+      - TOR_AUTH_PASSWORD=${TOR_AUTH_PASSWORD:?TOR_AUTH_PASSWORD is required}
       - TOR_SOCKS_PORT=${TOR_SOCKS_PORT:-9050}
       - TOR_CONTROL_PORT=${TOR_CONTROL_PORT:-9051}
     healthcheck:
