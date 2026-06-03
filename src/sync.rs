@@ -51,7 +51,7 @@ pub fn build_taker_config(cfg: &Config) -> TakerInitConfig {
 }
 
 pub fn sync_loop(init_config: TakerInitConfig, sync_interval_secs: u64, store: state::SharedStore) {
-    use coinswap::taker::{Taker, offers::MakerState};
+    use coinswap::taker::Taker;
 
     if let Some(rpc) = init_config.rpc_config.as_ref() {
         wait_for_tcp(&rpc.url, "Bitcoin RPC");
@@ -97,25 +97,27 @@ pub fn sync_loop(init_config: TakerInitConfig, sync_interval_secs: u64, store: s
             .unwrap_or_default()
             .as_secs();
 
-        let offers: Vec<state::ApiOffer> = book
+        // Include every maker the offerbook tracks — Good, Unresponsive, Bad.
+        // The API consumer decides what to display; we don't filter here.
+        let makers: Vec<state::ApiMaker> = book
             .all_makers()
-            .into_iter()
-            .filter(|m| matches!(m.state, MakerState::Good))
-            .filter_map(|m| {
-                m.offer
-                    .as_ref()
-                    .map(|o| state::ApiOffer::from_coinswap(o, &m.address, timestamp))
-            })
+            .iter()
+            .map(|m| state::ApiMaker::from_candidate(m, timestamp))
             .collect();
 
-        let count = offers.len();
+        let count = makers.len();
+        let with_offer = makers.iter().filter(|m| m.offer.is_some()).count();
         {
             let mut s = store.write().unwrap();
-            s.offers = offers;
+            s.makers = makers;
             s.last_sync = Some(timestamp);
         }
 
-        tracing::info!(count, "Sync done, sleeping {sync_interval_secs}s");
+        tracing::info!(
+            count,
+            with_offer,
+            "Sync done, sleeping {sync_interval_secs}s"
+        );
         std::thread::sleep(Duration::from_secs(sync_interval_secs));
     }
 }

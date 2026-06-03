@@ -70,20 +70,20 @@ jobs:
             sleep 1
           done
 
-          # /api/health: status=ok, offer_count=0 on a fresh container.
+          # /api/health: status=ok, maker_count=0 on a fresh container.
           health=$(curl -fsS http://127.0.0.1:3000/api/health)
           echo "Health: $health"
-          if ! echo "$health" | jq -e '.status == "ok" and .offer_count == 0' > /dev/null; then
+          if ! echo "$health" | jq -e '.status == "ok" and .maker_count == 0 and .with_offer == 0' > /dev/null; then
             echo "Health assertion failed"
             docker logs marketd-test || true
             exit 1
           fi
 
-          # /api/offers: empty array on a fresh container.
-          offers=$(curl -fsS http://127.0.0.1:3000/api/offers)
-          echo "Offers: $offers"
-          if ! echo "$offers" | jq -e 'type == "array" and length == 0' > /dev/null; then
-            echo "Offers assertion failed"
+          # /api/makers: empty array on a fresh container.
+          makers=$(curl -fsS http://127.0.0.1:3000/api/makers)
+          echo "Makers: $makers"
+          if ! echo "$makers" | jq -e 'type == "array" and length == 0' > /dev/null; then
+            echo "Makers assertion failed"
             docker logs marketd-test || true
             exit 1
           fi

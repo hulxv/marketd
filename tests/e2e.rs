@@ -13,7 +13,7 @@
 //!    Spawns a funded, fidelity-bonded `MakerServer` in-process, lets it
 //!    broadcast its offer to the nostr relay, runs marketd's `sync_loop`
 //!    against the same relay, and asserts the offer reaches
-//!    `GET /api/offers` with the right fields.
+//!    `GET /api/makers` with the right fields.
 //!
 //! Both tests require `BITCOIND_EXE` and assume a nostr-rs-relay listening
 //! on `ws://127.0.0.1:8000` (the docker entrypoint provides this).
@@ -91,15 +91,16 @@ fn taker_init_and_http_layer_against_regtest() {
     assert_eq!(resp.status(), 200);
     let body: Value = resp.into_json().expect("decode /api/health");
     assert_eq!(body["status"], "ok");
-    assert_eq!(body["offer_count"], 0);
+    assert_eq!(body["maker_count"], 0);
+    assert_eq!(body["with_offer"], 0);
 
     let resp = guard
         .agent
-        .get(&guard.url("/api/offers"))
+        .get(&guard.url("/api/makers"))
         .call()
-        .expect("GET /api/offers");
+        .expect("GET /api/makers");
     assert_eq!(resp.status(), 200);
-    let offers: Value = resp.into_json().expect("decode /api/offers");
+    let offers: Value = resp.into_json().expect("decode /api/makers");
     assert_eq!(offers.as_array().expect("array").len(), 0);
 }
 
@@ -234,30 +235,32 @@ fn maker_offer_flows_through_to_api_offers() {
     // ───────── HTTP layer ─────────
     let guard = common::MarketdServerGuard::start(store.clone());
 
-    // Poll /api/offers until non-empty.
+    // Poll /api/makers until a maker with an offer appears.
     let offer_deadline = Instant::now() + Duration::from_secs(120);
-    let offer = loop {
+    let maker_json = loop {
         assert!(
             Instant::now() < offer_deadline,
-            "marketd /api/offers stayed empty for 120s"
+            "marketd /api/makers never saw a maker with an offer (120s)"
         );
 
         let resp = guard
             .agent
-            .get(&guard.url("/api/offers"))
+            .get(&guard.url("/api/makers"))
             .call()
-            .expect("GET /api/offers");
-        let body: Value = resp.into_json().expect("decode /api/offers");
-        let arr = body.as_array().expect("offers JSON is array");
-        if let Some(first) = arr.first() {
-            break first.clone();
+            .expect("GET /api/makers");
+        let body: Value = resp.into_json().expect("decode /api/makers");
+        let arr = body.as_array().expect("makers JSON is array");
+        if let Some(m) = arr.iter().find(|m| !m["offer"].is_null()) {
+            break m.clone();
         }
         thread::sleep(Duration::from_secs(2));
     };
 
-    tracing::info!(?offer, "marketd saw an offer");
+    tracing::info!(?maker_json, "marketd saw a maker with an offer");
 
-    assert_eq!(offer["address"], format!("127.0.0.1:{maker_net_port}"));
+    assert_eq!(maker_json["address"], format!("127.0.0.1:{maker_net_port}"));
+    assert_eq!(maker_json["state"]["kind"], "good");
+    let offer = &maker_json["offer"];
     assert_eq!(offer["base_fee"], 1000);
     assert_eq!(offer["min_size"], 10_000);
     assert_eq!(offer["required_confirms"], 1);
@@ -281,7 +284,8 @@ fn maker_offer_flows_through_to_api_offers() {
         .expect("GET /api/health");
     let body: Value = resp.into_json().expect("decode /api/health");
     assert_eq!(body["status"], "ok");
-    assert!(body["offer_count"].as_u64().unwrap() >= 1);
+    assert!(body["maker_count"].as_u64().unwrap() >= 1);
+    assert!(body["with_offer"].as_u64().unwrap() >= 1);
     assert!(body["last_sync"].is_number());
 
     // ───────── Teardown ─────────

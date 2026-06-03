@@ -2,8 +2,36 @@ import { useState, useEffect } from "react";
 
 const POLL_INTERVAL_MS = 60_000;
 
+function stateLabel(state) {
+  if (!state) return "—";
+  switch (state.kind) {
+    case "good":
+      return "Good";
+    case "unresponsive":
+      return `Unresponsive (${state.retries})`;
+    case "bad":
+      return "Bad";
+    default:
+      return state.kind;
+  }
+}
+
+function stateClass(state) {
+  if (!state) return "text-gray-400";
+  switch (state.kind) {
+    case "good":
+      return "text-green-400";
+    case "unresponsive":
+      return "text-yellow-400";
+    case "bad":
+      return "text-red-400";
+    default:
+      return "text-gray-400";
+  }
+}
+
 function App() {
-  const [offers, setOffers] = useState([]);
+  const [makers, setMakers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -11,31 +39,31 @@ function App() {
   const EXPLORER_BASE =
     import.meta.env.VITE_EXPLORER_BASE || "https://mempool.space/signet";
 
-  const fetchOffers = () => {
-    fetch("/api/offers")
+  const fetchMakers = () => {
+    fetch("/api/makers")
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
       .then((data) => {
-        setOffers(data);
+        setMakers(data);
         setError(null);
         if (data.length > 0) {
-          const latest = Math.max(...data.map((o) => o.timestamp * 1000));
+          const latest = Math.max(...data.map((m) => m.timestamp * 1000));
           setLastUpdated(new Date(latest));
         }
         setLoading(false);
       })
       .catch((err) => {
-        console.error("Error loading offers:", err);
+        console.error("Error loading makers:", err);
         setError(err.message);
         setLoading(false);
       });
   };
 
   useEffect(() => {
-    fetchOffers();
-    const id = setInterval(fetchOffers, POLL_INTERVAL_MS);
+    fetchMakers();
+    const id = setInterval(fetchMakers, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, []);
 
@@ -52,6 +80,8 @@ function App() {
     );
   }
 
+  const withOffer = makers.filter((m) => m.offer).length;
+
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       <div className="max-w-screen-2xl mx-auto p-6">
@@ -60,13 +90,14 @@ function App() {
             Coinswap Market
           </h1>
           <p className="text-gray-400 text-lg">
-            Live market offers with competitive rates
+            All makers tracked by the daemon — including bad and unresponsive
+            ones.
           </p>
         </div>
 
         {error && (
           <div className="mb-6 p-4 bg-red-900 border border-red-700 rounded-lg text-red-300 text-sm">
-            Failed to load offers: {error}
+            Failed to load makers: {error}
           </div>
         )}
 
@@ -77,6 +108,8 @@ function App() {
                 <tr className="bg-linear-to-r from-orange-600 to-orange-500">
                   {[
                     { label: "Address", desc: "Maker Address" },
+                    { label: "State", desc: "Connection Status" },
+                    { label: "Protocol", desc: "Legacy / Taproot" },
                     { label: "Base Fee", desc: "Fixed Fee (sat)" },
                     { label: "Amount", desc: "Volume Fee" },
                     { label: "Time", desc: "Time Fee" },
@@ -99,67 +132,111 @@ function App() {
               </thead>
 
               <tbody className="divide-y divide-gray-700">
-                {offers.length === 0 ? (
+                {makers.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={9}
                       className="px-6 py-12 text-center text-gray-400"
                     >
-                      No offers available. The daemon may still be syncing.
+                      No makers known yet. The daemon may still be syncing.
                     </td>
                   </tr>
                 ) : (
-                  offers.map((offer) => (
-                    <tr
-                      key={`${offer.fidelity_bond.outpoint.txid}:${offer.fidelity_bond.outpoint.vout}`}
-                      className="hover:bg-gray-700 transition-colors duration-150"
-                    >
-                      <td className="px-6 py-4">
-                        <div className="font-mono text-sm text-orange-300 truncate max-w-xs">
-                          {offer.address}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="font-medium text-green-400">
-                          {offer.base_fee.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-blue-400 font-medium">
-                          {(offer.amount_relative_fee_pct * 100).toFixed(2)}%
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-blue-400 font-medium">
-                          {(offer.time_relative_fee_pct * 100).toFixed(2)}%
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-yellow-400">
-                          {offer.min_size.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-yellow-400">
-                          {offer.max_size.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-gray-200">
-                          {offer.fidelity_bond.amount.toLocaleString()} sat
-                        </div>
-                        <a
-                          href={`${EXPLORER_BASE}/tx/${offer.fidelity_bond.outpoint.txid}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-orange-400 text-xs hover:underline truncate block max-w-xs"
-                          title={offer.fidelity_bond.outpoint.txid}
-                        >
-                          {offer.fidelity_bond.outpoint.txid}
-                        </a>
-                      </td>
-                    </tr>
-                  ))
+                  makers.map((m) => {
+                    const offer = m.offer;
+                    const bond = offer?.fidelity_bond;
+                    const key = bond
+                      ? `${bond.outpoint.txid}:${bond.outpoint.vout}`
+                      : m.address;
+                    return (
+                      <tr
+                        key={key}
+                        className="hover:bg-gray-700 transition-colors duration-150"
+                      >
+                        <td className="px-6 py-4">
+                          <div className="font-mono text-sm text-orange-300 truncate max-w-xs">
+                            {m.address}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`font-medium ${stateClass(m.state)}`}
+                          >
+                            {stateLabel(m.state)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-gray-300">
+                          {m.protocol ?? "—"}
+                        </td>
+                        <td className="px-6 py-4">
+                          {offer ? (
+                            <span className="font-medium text-green-400">
+                              {offer.base_fee.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="text-gray-500">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {offer ? (
+                            <span className="text-blue-400 font-medium">
+                              {(offer.amount_relative_fee_pct * 100).toFixed(2)}
+                              %
+                            </span>
+                          ) : (
+                            <span className="text-gray-500">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {offer ? (
+                            <span className="text-blue-400 font-medium">
+                              {(offer.time_relative_fee_pct * 100).toFixed(2)}%
+                            </span>
+                          ) : (
+                            <span className="text-gray-500">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {offer ? (
+                            <span className="text-yellow-400">
+                              {offer.min_size.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="text-gray-500">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {offer ? (
+                            <span className="text-yellow-400">
+                              {offer.max_size.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="text-gray-500">—</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {bond ? (
+                            <>
+                              <div className="font-medium text-gray-200">
+                                {bond.amount.toLocaleString()} sat
+                              </div>
+                              <a
+                                href={`${EXPLORER_BASE}/tx/${bond.outpoint.txid}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-orange-400 text-xs hover:underline truncate block max-w-xs"
+                                title={bond.outpoint.txid}
+                              >
+                                {bond.outpoint.txid}
+                              </a>
+                            </>
+                          ) : (
+                            <span className="text-gray-500">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -168,8 +245,8 @@ function App() {
 
         <div className="mt-6 text-center text-gray-400 text-sm">
           <p>
-            Showing {offers.length} active offer{offers.length !== 1 ? "s" : ""}{" "}
-            •{" "}
+            Showing {makers.length} maker{makers.length !== 1 ? "s" : ""} (
+            {withOffer} with offer{withOffer !== 1 ? "s" : ""}) •{" "}
             {lastUpdated
               ? `Updated ${lastUpdated.toLocaleTimeString()}`
               : "Waiting for first sync..."}
